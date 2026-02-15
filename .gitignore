@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Local tool/config
+.claude/
+
+# Runtime/state artifacts
+*.log
+*.lock
+
+# HHAT generated caches/exports
+**/processing_cache.npz
+**/processing_state.json
+**/exports/
+
+# IDE
+.vscode/
+.idea/
