@@ -1,6 +1,6 @@
 # HHAT
 
-HI Horn Antenna Analysis Tool (21cm 중성수소 관측 GUI)입니다.  
+HHAT는 **HI Horn Analysis Tool** (21cm 중성수소 관측 GUI)입니다.  
 `관측` 탭에서 RTL-SDR로 데이터를 수집하고, `분석` 탭에서 단계별 파이프라인으로 보정/피팅/물리량 계산/맵 시각화를 수행합니다.
 
 ## 주요 기능
