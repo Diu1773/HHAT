@@ -79,7 +79,7 @@ class Step13Batch(StepBase):
         cl.addRow("색상 기준:", self.combo_color)
 
         self.combo_render = QComboBox()
-        self.combo_render.addItems(["빔 커버리지", "포인트"])
+        self.combo_render.addItems(["빔 커버리지", "포인트", "l-v 다이어그램"])
         self.combo_render.currentTextChanged.connect(self._on_render_mode_changed)
         cl.addRow("표시 방식:", self.combo_render)
 
@@ -133,9 +133,10 @@ class Step13Batch(StepBase):
 
     def _on_render_mode_changed(self, mode: str):
         is_point = (mode == "포인트")
+        is_lv = (mode == "l-v 다이어그램")
         self.combo_color.setEnabled(is_point)
-        self.chk_label.setEnabled(is_point)
-        self.spin_beam.setEnabled(not is_point)
+        self.chk_label.setEnabled(is_point or is_lv)
+        self.spin_beam.setEnabled(mode == "빔 커버리지")
 
     def _value_from_obs(self, obs):
         metric = self.combo_color.currentText()
@@ -228,6 +229,9 @@ class Step13Batch(StepBase):
         if render_mode == "빔 커버리지":
             self._plot_beam_coverage(rows)
             return
+        if render_mode == "l-v 다이어그램":
+            self._plot_lv_diagram(rows)
+            return
 
         metric = self.combo_color.currentText()
         if metric == "관측 타입":
@@ -314,6 +318,68 @@ class Step13Batch(StepBase):
         self.lbl_info.setText(f"빔 커버리지 표시: {len(rows)}개 관측")
         self.canvas.fig.tight_layout()
         self.canvas.draw()
+
+    def _plot_lv_diagram(self, rows):
+        """은경(l) vs 시선속도(V_LSR) 다이어그램 — 은하 회전곡선 분석용."""
+        ax = self.canvas.ax
+        ax.set_title("l-v Diagram (Galactic Longitude vs Velocity)")
+        ax.set_xlabel("Galactic Longitude l (deg)")
+        ax.set_ylabel("V_LSR (km/s)")
+        ax.set_xlim(0, 360)
+
+        plotted = 0
+        for obs, l, b in rows:
+            vel = self._get_peak_velocity(obs)
+            if vel is None or not np.isfinite(vel):
+                continue
+            ax.scatter(l, vel, s=50, c="#66ccff", edgecolors="#111",
+                       linewidths=0.6, zorder=3)
+            if self.chk_label.isChecked():
+                ax.text(l + 1.5, vel + 2.0, obs.display_name,
+                        fontsize=7, color="#ddd")
+            plotted += 1
+
+        if plotted == 0:
+            self.lbl_info.setText(
+                "속도 데이터가 없습니다.\n"
+                "Step 7(속도 변환) + Step 9(피크 검출) 또는 Step 10(피팅)을 먼저 실행하세요."
+            )
+        else:
+            ax.axhline(0, color="#ff6666", ls="--", alpha=0.5, lw=0.8)
+            ax.legend(fontsize=8, facecolor="#2a2a3e", edgecolor="#555",
+                      labelcolor="white", loc="upper right")
+            self.lbl_info.setText(f"l-v 표시: {plotted}개 관측")
+
+        self.canvas.fig.tight_layout()
+        self.canvas.draw()
+
+    def _get_peak_velocity(self, obs) -> float | None:
+        """관측의 대표 시선속도(km/s)를 얻는다."""
+        # 피팅 결과에서 가장 강한 성분
+        if obs.fit_result and obs.fit_result.success and obs.fit_result.components:
+            strongest = max(obs.fit_result.components, key=lambda c: abs(c.amplitude))
+            fit_unit = (obs.fit_result.x_unit or "").lower()
+            center = float(strongest.center)
+            if fit_unit == "km/s":
+                return center
+            if fit_unit == "mhz":
+                return self._freq_to_vel(obs, center)
+
+        # 피크 검출 결과에서
+        peaks = obs.metadata.get("peaks", [])
+        if peaks:
+            p = peaks[0]
+            unit = str(p.get("unit", "")).lower()
+            try:
+                pos = float(p.get("pos"))
+            except (TypeError, ValueError):
+                return None
+            if np.isfinite(pos):
+                if unit == "km/s":
+                    return pos
+                if unit == "mhz":
+                    return self._freq_to_vel(obs, pos)
+        return None
 
     def save_state(self):
         self.project_state.store_step_data("step13", {

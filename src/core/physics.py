@@ -79,16 +79,24 @@ def component_integrated(comp: FitComponent, dv: float = 1.0) -> float:
 def psd_to_temperature(
     psd_db: np.ndarray,
     t_sys: float = 150.0,
-    eta: float = 0.5,
 ) -> np.ndarray:
-    """PSD(dB) → 안테나 온도(K) 근사 변환.
+    """PSD(dB) → 안테나 온도 T*_A(K) 근사 변환.
+
+    Baseline 제거 후 dB 데이터 기준:
+        P_ratio = 10^(Δ_dB/10) ≈ P(f)/P_baseline
+        T*_A(f) ≈ T_sys × (P_ratio - 1)
+
+    Line-free에서 Δ_dB ≈ 0 → P_ratio ≈ 1 → T*_A ≈ 0 (정상).
+    T_B는 별도로 brightness_temperature()로 변환.
 
     주의: 절대 교정 없이는 상대값 중심이다.
-    η(효율), T_sys는 추정값이 사용될 수 있음.
     """
-    psd_linear = 10 ** (psd_db / 10.0)
-    psd_norm = psd_linear / np.median(psd_linear)
-    return t_sys * psd_norm * eta
+    psd_linear = 10.0 ** (np.asarray(psd_db, dtype=float) / 10.0)
+    median_psd = np.median(psd_linear)
+    if not np.isfinite(median_psd) or median_psd <= 0:
+        return np.zeros_like(psd_db, dtype=float)
+    # T*_A = T_sys × (P/P₀ - 1): line-free에서 0, HI 선에서 양수
+    return t_sys * (psd_linear / median_psd - 1.0)
 
 
 def brightness_temperature(

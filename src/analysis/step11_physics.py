@@ -290,14 +290,17 @@ class Step11Physics(StepBase):
                 integ = integrated_intensity(x_use[m], y_use[m])
                 lines.append(f"적분 강도 (raw): {integ:.4f}")
 
-                t_ant = psd_to_temperature(y_use, self.spin_tsys.value(), eta)
+                t_ant = psd_to_temperature(y_use, self.spin_tsys.value())
+                t_b = brightness_temperature(t_ant, eta)
                 integ_t = integrated_intensity(x_use[m], t_ant[m])
-                lines.append(f"적분 강도 (T_ant, 근사): {integ_t:.4f} K·{integ_unit}")
+                integ_b = integrated_intensity(x_use[m], t_b[m])
+                lines.append(f"적분 강도 (T*_A, 근사): {integ_t:.4f} K·{integ_unit}")
+                lines.append(f"적분 강도 (T_B, 근사):  {integ_b:.4f} K·{integ_unit}")
 
                 if not use_velocity:
                     lines.append("N_HI: 계산 생략 (속도축 변환 필요: Step 7)")
-                elif integ_t > 0:
-                    n_hi = column_density_hi(integ_t)
+                elif integ_b > 0:
+                    n_hi = column_density_hi(integ_b)
                     lines.append(f"N_HI (추정): {n_hi:.3e} cm⁻²")
                     if n_hi > 1.0e22:
                         lines.append("[주의] N_HI가 매우 큽니다. 적분 구간/잔여 baseline 영향 여부를 점검하세요.")

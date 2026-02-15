@@ -143,8 +143,11 @@ class ObserveTab(QWidget):
         group = QGroupBox("관측 타입")
         layout = QVBoxLayout(group)
 
-        desc = QLabel("광학 관측의 Light/Flat/Dark에 대응합니다.")
-        desc.setStyleSheet("color: #888; font-size: 10px;")
+        desc = QLabel(
+            "관측 순서: SOU(은하면) 먼저 → AMB(흡수체/지면) 이어서 촬영\n"
+            "같은 세션에서 SOU와 AMB를 쌍으로 기록해야 Y-factor 교정이 가능합니다."
+        )
+        desc.setStyleSheet("color: #ff9800; font-size: 10px;")
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
@@ -181,19 +184,30 @@ class ObserveTab(QWidget):
         group = QGroupBox("수신 파라미터")
         layout = QFormLayout(group)
 
+        # Gain (권장 가이드 포함)
         self.spin_gain = QDoubleSpinBox()
         self.spin_gain.setRange(0, 50)
-        self.spin_gain.setValue(40.0)
+        self.spin_gain.setValue(25.0)
         self.spin_gain.setSuffix(" dB")
         self.spin_gain.setDecimals(1)
+        self.spin_gain.setToolTip(
+            "권장: 20~30 dB\n"
+            "스펙트럼 최대값이 -20 ~ -10 dB/Hz 범위에 오도록 조절하세요.\n"
+            "너무 높으면 포화, 너무 낮으면 SNR 부족."
+        )
         layout.addRow("Gain:", self.spin_gain)
 
+        gain_hint = QLabel("권장 20~30 dB — 스펙트럼 피크가 -20~-10 dB/Hz 범위")
+        gain_hint.setStyleSheet("color: #ff9800; font-size: 9px;")
+        gain_hint.setWordWrap(True)
+        layout.addRow(gain_hint)
+
         self.txt_sample_rate = QLineEdit("2.4e6")
-        self.txt_sample_rate.setToolTip("Hz 단위. 수식 가능 (예: 2.4e6)")
+        self.txt_sample_rate.setToolTip("Hz 단위. 수식 가능 (예: 2.4e6)\n실습 권장: 2.0~2.4 MHz")
         layout.addRow("Sample Rate:", self.txt_sample_rate)
 
         self.txt_center_freq = QLineEdit("1420.4e6")
-        self.txt_center_freq.setToolTip("Hz 단위. HI 기본값: 1420.4e6")
+        self.txt_center_freq.setToolTip("Hz 단위. HI 21cm 정지 주파수: 1420.405 MHz")
         layout.addRow("Center Freq:", self.txt_center_freq)
 
         self.spin_nfft = QComboBox()
@@ -205,12 +219,41 @@ class ObserveTab(QWidget):
         self.spin_iterations.setRange(100, 100000)
         self.spin_iterations.setValue(5000)
         self.spin_iterations.setSingleStep(500)
+        self.spin_iterations.valueChanged.connect(self._update_integration_time)
         layout.addRow("Iterations:", self.spin_iterations)
 
         self.txt_samples_per_scan = QLineEdit("512*1024")
+        self.txt_samples_per_scan.textChanged.connect(self._update_integration_time)
         layout.addRow("Samples/Scan:", self.txt_samples_per_scan)
 
+        # 적분시간 표시 (초 단위)
+        self.lbl_integration_time = QLabel("")
+        self.lbl_integration_time.setStyleSheet("color: #66ccff; font-size: 10px; font-weight: bold;")
+        layout.addRow("적분 시간:", self.lbl_integration_time)
+
+        integ_hint = QLabel("50초 이상이면 충분합니다. 더 필요하면 여러 번 관측 후 평균.")
+        integ_hint.setStyleSheet("color: #888; font-size: 9px;")
+        integ_hint.setWordWrap(True)
+        layout.addRow(integ_hint)
+
         return group
+
+    def _update_integration_time(self):
+        """iterations와 samples_per_scan으로 적분시간(초) 계산 표시"""
+        try:
+            sr = self._eval_expr(self.txt_sample_rate.text())
+            sps = self._eval_expr(self.txt_samples_per_scan.text())
+            iters = self.spin_iterations.value()
+            if sr > 0 and sps > 0:
+                total_sec = (sps * iters) / sr
+                if total_sec >= 60:
+                    self.lbl_integration_time.setText(f"{total_sec:.0f}초 ({total_sec/60:.1f}분)")
+                else:
+                    self.lbl_integration_time.setText(f"{total_sec:.1f}초")
+            else:
+                self.lbl_integration_time.setText("-")
+        except Exception:
+            self.lbl_integration_time.setText("-")
 
     def _build_site_group(self) -> QGroupBox:
         """관측지 설정"""
@@ -274,6 +317,14 @@ class ObserveTab(QWidget):
 
         self.chk_alt_az.toggled.connect(self.spin_alt.setEnabled)
         self.chk_alt_az.toggled.connect(self.spin_az.setEnabled)
+
+        beam_info = QLabel(
+            "빔 크기: ~14°×14° (피라미드 혼)\n"
+            "포인팅 허용 오차: ±5° 이내면 충분"
+        )
+        beam_info.setStyleSheet("color: #888; font-size: 9px;")
+        beam_info.setWordWrap(True)
+        layout.addRow(beam_info)
 
         # 향후 ASCOM 연결
         self.btn_mount = QPushButton("가대 연결 (향후 지원)")
@@ -446,8 +497,10 @@ class ObserveTab(QWidget):
         self.progress_bar.setRange(0, params.iterations)
         self.progress_bar.setValue(0)
 
+        integ_sec = (params.samples_per_scan * params.iterations) / params.sample_rate if params.sample_rate > 0 else 0
         self._log(f"관측 시작: {params.obs_type} | Gain={params.gain}dB | "
-                  f"Iter={params.iterations} | NFFT={params.nfft}")
+                  f"Iter={params.iterations} | NFFT={params.nfft} | "
+                  f"적분시간={integ_sec:.0f}초")
 
         self._worker = ObservationWorker(self.sdr, params)
         self._worker.progress.connect(self._on_progress)
@@ -500,3 +553,4 @@ class ObserveTab(QWidget):
     def initialize(self):
         """탭 초기화 시 SDR 상태 확인"""
         self.sdr.check_connection()
+        self._update_integration_time()
